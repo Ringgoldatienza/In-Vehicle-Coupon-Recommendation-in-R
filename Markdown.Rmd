@@ -1,0 +1,642 @@
+---
+title: "In-Vehicle Coupon Recommendation"
+subtitle: "HarvardX - PH125.9x: Data Science: Capstone"
+author: "Ringgold P. Atienza"
+date: "`r format(Sys.time(), '%B %d, %Y')`"
+output: pdf_document
+---
+
+# 1. Introduction
+
+Every data-driven company’s most dominant machine learning task is predicting customer behavior. Machine learning predicts customer behavior using data mining and statistical techniques to uncover insights from the historical data. An accurate predictive model of customer behavior can lead to an effective marketing strategy, which results in brand growth and an increase in revenue [1]. Thus, companies are always looking to improve their predictions to stay ahead of the competition.
+
+For this project, I created a machine learning model to predict whether a person will accept a coupon or not using three classification algorithms. The three algorithms’ predictive values were compared. The data for this project was downloaded from the UCI machine learning repository website [2]. The survey data was initially collected from Amazon Mechanical Turk. The survey describes different driving scenarios and then asks whether the person will accept the coupon given the person is the driver. The data includes information on destination, passenger, weather, temperature, time, type of coupon, coupon expiration, gender, age, marital status, education, occupation, income, frequency of going to bars and coffee houses, frequency of having takeaways, frequency of going to restaurants, and driving distance to restaurant or bar for using a coupon. The data has 12,685 observations and was made publicly available on September 15, 2020. This project aims to create a classification algorithm with an $F_1 > 0.75$ in the validation set. 
+
+Since the project is a classification problem, I utilized three of the popular classification algorithm, namely the classification and regression tree (CART) model, random forest, and XGBoost. CART is a tree-based algorithm that looks at ways to locally partition or split data into smaller segments based on differing values and combinations of predictors. CART selects the best performing splits, then repeats this process recursively until the optimal collection is found [3]. The result of CART is visualized as a decision tree with a series of binary splits that ultimately leads to terminal nodes (i.e., to accept the coupon or not). Random forest is an ensemble learning method for classification based on a collection of CART Trees, bringing together independent trees to determine the overall prediction of the forest [4]. The Extreme Gradient Boosting or XGBoost is a powerful tool for classification that implements gradient boosted decision trees designed for speed and performance [5].
+
+# 2. Method and Analysis
+
+## 2.1. Preparing the Data
+
+### 2.1.1. Installation of Packages
+
+```{r, include=FALSE}
+################################################################################
+#Install packages and load dataset
+#For easy data manipulation and visualization
+if(!require(tidyverse)) install.packages("tidyverse", repos = "http://cran.us.r-project.org")
+#For Fast Aggregation of Data
+if(!require(data.table)) install.packages("data.table", repos = "http://cran.us.r-project.org")
+#A fast, consistent tool for working with data frame like objects
+if(!require(dplyr)) install.packages("dplyr", repos = "http://cran.us.r-project.org")
+#For tyding dataset
+if(!require(tidyr)) install.packages("tidyr", repos = "http://cran.us.r-project.org")
+#For easy machine learning workflow
+if(!require(caret)) install.packages("caret", repos = "http://cran.us.r-project.org")
+#Recursive partitioning for classification, regression and survival trees.
+if(!require(rpart)) install.packages("rpart", repos = "http://cran.us.r-project.org")
+#Implements Breiman's random forest algorithm for classification and regression.
+if(!require(randomForest)) install.packages("randomForest", repos = "http://cran.us.r-project.org")
+#Implements eXtreme Gradient Boosting package.
+if(!require(xgboost)) install.packages("xgboost", repos = "http://cran.us.r-project.org")
+#Tools for moving window statistics, GIF, Base64, ROC AUC, etc.
+if(!require(caTools)) install.packages("caTools", repos = "http://cran.us.r-project.org")
+#Tools for Sparse and Dense Matrix Classes and Methods
+if(!require(Matrix)) install.packages("Matrix", repos = "http://cran.us.r-project.org")
+#A collection of evaluation metrics
+if(!require(MLmetrics)) install.packages("MLmetrics", repos = "http://cran.us.r-project.org")
+#Make diagrams in R using viz.js or mermaid.js with infrastructure provided by htmlwidgets.
+if(!require(DiagrammeR)) install.packages("DiagrammeR", repos = "http://cran.us.r-project.org")
+```
+
+```{r echo=TRUE, results='hide'}
+library(tidyverse)
+library(dplyr)
+library(caTools)
+library(randomForest)
+library(xgboost)
+library(MLmetrics)
+```
+### 2.1.2. Train, Test, and Validation Sets
+
+```{r, include=FALSE}
+#Load dataset
+#Source: Wang, Tong, Cynthia Rudin, Finale Doshi-Velez, Yimin Liu, Erica Klampfl, 
+#and Perry MacNeille. 'A bayesian framework for learning rule sets for interpretable classification.' 
+#The Journal of Machine Learning Research 18, no. 1 (2017): 2357-2393.
+dataset <- read.csv("https://raw.githubusercontent.com/Ringgoldatienza/In-vehicle-Coupon-Recommendation/main/Data.csv")
+```
+
+```{r, include=FALSE}
+#Partition data into training, validation and test sets.
+#I use the 70-15-15 partition as it is one of the most common practice for partition.
+#https://www.v7labs.com/blog/train-validation-test-set
+
+set.seed(2022)
+test_index <- createDataPartition(y = dataset$Y, times = 1, p = 0.3, list = FALSE)
+trainingset <- dataset[-test_index,]
+validation <- dataset[test_index,]
+rm(test_index)
+
+test_index <- createDataPartition(y = validation$Y, times = 1, p = 0.5, list = FALSE)
+testset <- validation[-test_index,]
+validation <- validation[test_index,]
+rm(test_index)
+```
+
+In machine learning, the best practice is to split the data into three independent sets: a training set, a test set, and a validation set [6]. The training dataset is used to fit the model. The test and validation sets are a sample of data taken from the training dataset to estimate the model’s performance while tuning the model’s hyperparameter. A test dataset is different from the validation dataset as it provides an unbiased evaluation of the model fit on the training dataset. This process is important to cross-validate and refines the final model without the risk of over-fitting. Meanwhile, the validation dataset provides an unbiased evaluation of the performance of the final tuned model. The validation set is not used for training, developing, or selecting algorithms but only to evaluate the final model.The process of the prediction modelling is presenting below (Figure 1)
+
+![Modelling Process](C:/Users/ADMIN/Documents/GitHub/In-Vehicle Coupon Recommendation/DataPartition.png){width="50%"}
+
+The In-Vehicle Coupon Recommendation Dataset was downloaded from the website: <https://archive.ics.uci.edu/ml/datasets/in-vehicle+coupon+recommendation>. The partitioning was then applied using the 70-30-30 split method (see Figure 2), as it is considered to be one of the most common partition practices in machine learning [6].
+
+![Data Partition](C:/Users/ADMIN/Documents/GitHub/In-Vehicle Coupon Recommendation/DataPartition2.png){width="40%"}
+
+
+
+## 2.2. Data Inspection
+
+### 2.2.1. Check for NAs and Singular Level Features
+
+I indentified and understand the attibutes of the dataset. Below we see the following column names belows. The 'direction_opp' variable is just the opposite of 'direction_same'. This will result to a very high correlation between both variables. The 'direction_opp' was excluded in the dataset.
+
+```{r, include=FALSE}
+trainingset <- subset(trainingset, select = -c(direction_opp))
+testset <- subset(testset, select = -c(direction_opp))
+validation <- subset(validation, select = -c(direction_opp))
+```
+
+
+```{r}
+colnames(trainingset)
+```
+I checked for the the missing values and the results showed that no NA were found as shown below:
+
+```{r}
+na_count <- sapply(trainingset, function(y) sum(length(which(is.na(y)))))
+na_count
+```
+
+### 2.2.2. Data Visualization
+
+I further check the data through visualization. Results below showed that the features 'toCoupon_GEQ5min', 'toCoupon_GEQ15min', 'car' showed no variation (i.e., only has one value), and were included in the data set. Moreover, it also showed that there were features with no values that were not detected using 'is.na'.
+
+```{r, figures-side, fig.show="hold", echo=FALSE, fig.height=2.5, fig.width=3}
+#Coupon and Destination
+trainingset%>% ggplot(aes(as.factor(Y))) + 
+  geom_bar(aes(fill = destination)) +
+  labs(x = "Coupon Acceptance", y = "Destination")
+
+#Coupon and Passenger
+trainingset%>% ggplot(aes(as.factor(Y))) + 
+  geom_bar(aes(fill = passanger)) +
+  labs(x = "Coupon Acceptance", y = "Passenger")
+
+#Coupon and Weather
+trainingset%>% ggplot(aes(as.factor(Y))) + 
+  geom_bar(aes(fill = weather)) +
+  labs(x = "Coupon Acceptance", y = "Weather")
+
+#Coupon and Temperature
+trainingset %>% ggplot(aes(as.factor(Y))) + 
+  geom_bar(aes(fill = as.factor(temperature))) +
+  labs(x = "Coupon Acceptance", fill = "Temperature")
+
+#Coupon and Time
+trainingset %>% ggplot(aes(as.factor(Y))) + 
+  geom_bar(aes(fill = as.factor(time))) +
+  labs(x = "Coupon Acceptance", fill = "Time")
+
+#Coupon and Coupon
+trainingset %>% ggplot(aes(as.factor(Y))) + 
+  geom_bar(aes(fill = as.factor(coupon))) +
+  labs(x = "Coupon Acceptance", fill = "Coupon")
+
+#Coupon and Expiration
+trainingset %>% ggplot(aes(as.factor(Y))) + 
+  geom_bar(aes(fill = as.factor(expiration))) +
+  labs(x = "Coupon Acceptance", fill = "Expiration")
+
+#Coupon and Gender
+trainingset %>% ggplot(aes(as.factor(Y))) + 
+  geom_bar(aes(fill = as.factor(gender))) +
+  labs(x = "Coupon Acceptance", fill = "Gender")
+
+#Coupon and Age
+trainingset %>% ggplot(aes(as.factor(Y))) + 
+  geom_bar(aes(fill = as.factor(age))) +
+  labs(x = "Coupon Acceptance", fill = "Age")
+
+#Coupon and Marital Status
+trainingset %>% ggplot(aes(as.factor(Y))) + 
+  geom_bar(aes(fill = as.factor(maritalStatus))) +
+  labs(x = "Coupon Acceptance", fill = "Marital Status")
+
+#Coupon and has_children
+trainingset %>% ggplot(aes(as.factor(Y))) + 
+  geom_bar(aes(fill = as.factor(has_children))) +
+  labs(x = "Coupon Acceptance", fill = "Has Children")
+
+#Coupon and Income
+trainingset %>% ggplot(aes(as.factor(Y))) + 
+  geom_bar(aes(fill = as.factor(income))) +
+  labs(x = "Coupon Acceptance", fill = "Income")
+
+#Coupon and Bar
+trainingset %>% ggplot(aes(as.factor(Y))) + 
+  geom_bar(aes(fill = as.factor(Bar))) +
+  labs(x = "Coupon Acceptance", fill = "Bar")
+
+#Coupon and CoffeeHouse
+trainingset %>% ggplot(aes(as.factor(Y))) + 
+  geom_bar(aes(fill = as.factor(CoffeeHouse))) +
+  labs(x = "Coupon Acceptance", fill = "CoffeeHouse")
+
+#Coupon and CarryAway
+trainingset %>% ggplot(aes(as.factor(Y))) + 
+  geom_bar(aes(fill = as.factor(CarryAway))) +
+  labs(x = "Coupon Acceptance", fill = "Carry Away")
+
+#Coupon and Restaurant Less Than 20
+trainingset %>% ggplot(aes(as.factor(Y))) + 
+  geom_bar(aes(fill = as.factor(RestaurantLessThan20))) +
+  labs(x = "Coupon Acceptance", fill = "Restaurant Less Than 20")
+
+#Coupon and Restaurant 20 To 50
+trainingset %>% ggplot(aes(as.factor(Y))) + 
+  geom_bar(aes(fill = as.factor(Restaurant20To50))) +
+  labs(x = "Coupon Acceptance", fill = "Restaurant 20 To 50")
+
+#Coupon and To Coupon GEQ 5min
+trainingset %>% ggplot(aes(as.factor(Y))) + 
+  geom_bar(aes(fill = as.factor(toCoupon_GEQ5min))) +
+  labs(x = "Coupon Acceptance", fill = "To Coupon GEQ 5min")
+
+#Coupon and To Coupon GEQ 15min
+trainingset %>% ggplot(aes(as.factor(Y))) + 
+  geom_bar(aes(fill = as.factor(toCoupon_GEQ5min))) +
+  labs(x = "Coupon Acceptance", fill = "To Coupon GEQ 15min")
+
+#Coupon and To Coupon GEQ 25min
+trainingset %>% ggplot(aes(as.factor(Y))) + 
+  geom_bar(aes(fill = as.factor(toCoupon_GEQ25min))) +
+  labs(x = "Coupon Acceptance", fill = "To Coupon GEQ 25min")
+
+#Coupon and To Direction Same
+trainingset %>% ggplot(aes(as.factor(Y))) + 
+  geom_bar(aes(fill = as.factor(direction_same))) +
+  labs(x = "Coupon Acceptance", fill = "Direction Same")
+
+```
+
+```{r, echo=FALSE, fig.height=3, fig.width=7}
+#Coupon and Education
+trainingset %>% ggplot(aes(as.factor(Y))) + 
+  geom_bar(aes(fill = as.factor(education))) +
+  labs(x = "Coupon Acceptance", fill = "Education")
+```
+
+
+```{r, echo=FALSE, fig.height=3, fig.width=7}
+#Coupon and Car
+trainingset %>% ggplot(aes(as.factor(Y))) + 
+  geom_bar(aes(fill = as.factor(car))) +
+  labs(x = "Coupon Acceptance", fill = "Car")
+```
+
+```{r, echo=FALSE, fig.height=3, fig.width=7}
+#Coupon and Occupation
+trainingset %>% ggplot(aes(y = as.factor(occupation))) + 
+  geom_bar(aes(fill = as.factor(Y))) +
+  labs(y = "Occupation", fill = "Coupon Acceptance")
+```
+
+```{r, include=FALSE}
+#Drop variables with no variation (toCoupon_GEQ5min, toCoupon_GEQ15min, car)
+trainingset <- subset(trainingset, select = -c(toCoupon_GEQ5min, toCoupon_GEQ15min, car))
+testset <- subset(testset, select = -c(toCoupon_GEQ5min, toCoupon_GEQ15min, car))
+validation <- subset(validation, select = -c(toCoupon_GEQ5min, toCoupon_GEQ15min, car))
+```
+
+We can see the following features that have no values on the 1st column of the table. The features with empty values comprised only of less than 2% which means imputation from the algorithm is feasible. Also, this is not the problem in this case, as the classification algorithms CART, Random Forest, and XGBoost are robust to missing values. However, this must be reported as one of the limitations of the dataset.
+
+```{r}
+table(trainingset$RestaurantLessThan20)
+table(trainingset$Restaurant20To50)
+table(trainingset$CarryAway)
+table(trainingset$CoffeeHouse)
+table(trainingset$Bar)
+```
+
+## 2.2. F1 Score
+
+It is often useful to have a one-number summary when we want to evaluate our prediction model, especially for optimization [7]. For that purpose, the $F_1$ score, is a widely used one-number summary for classification algorithms. The $F_1$ score is a measure of the model's accuracy, and is the harmonic average of the precision and recall:
+
+$$
+\frac{1}{\frac{1}{2}\left(\frac{1}{\mbox{recall}} +
+    \frac{1}{\mbox{precision}}\right) }
+$$
+
+In general, machine learning prediction models aims to maximize $F_1$ score as possible. The highest possible value of $F_1$ score is 1.0 indicating perfect precision and recall, while the lowest is 0.0, indicating zero precition and recall. This project's aim is to achieve $F_1 > 0.75$.
+
+## 2.3. Classification and Regression Tree (CART)
+
+### 2.3.1. Vanilla CART
+
+The first algorithm I used in this project is the CART. It is also the simplest algorithm I used compared to the other two algorithms I used in this project. Before we set up the CART, we must mutate all features as a factor. Then I ran the model using 'rpart' function to predict coupon acceptance against all valid features in the training set. The model was then predicted on the test set. The results below showed that the vanilla CART was not able to achieve an $F_1 > 0.75$.
+
+```{r, include=FALSE}
+#Set interger values into factors
+trainingset <- trainingset %>%
+  mutate(temperature = as.factor(temperature)) %>%
+  mutate(toCoupon_GEQ25min =  as.factor(toCoupon_GEQ25min)) %>%
+  mutate(direction_same = as.factor(direction_same)) %>%
+  mutate(Y = as.factor(Y))
+```
+
+```{r, include=FALSE}
+CARTModel <- rpart(Y ~ destination + passanger + weather + temperature +
+                     time + coupon + expiration + gender + age + maritalStatus +
+                     has_children + education + income + direction_same +
+                     Bar + CoffeeHouse + CarryAway + RestaurantLessThan20 +
+                     Restaurant20To50 + toCoupon_GEQ25min, data = trainingset)
+```
+
+```{r, echo=FALSE, fig.height=3.2, fig.width=7}
+#Show result of the CART Model
+par(xpd = NA) # Avoid clipping the text in some device
+plot(CARTModel)
+text(CARTModel, digits = 3)
+```
+
+```{r, include=FALSE}
+#Make sure testset has the same data structure from testset
+testset <- testset %>%
+  mutate(temperature = as.factor(temperature)) %>%
+  mutate(toCoupon_GEQ25min =  as.factor(toCoupon_GEQ25min)) %>%
+  mutate(direction_same = as.factor(direction_same)) %>%
+  mutate(Y = as.factor(Y))
+
+#Create predictions based on the CART model
+predicted.cases <- CARTModel %>% predict(testset, "class")
+```
+
+```{r}
+confusionMatrix(predicted.cases, testset$Y, mode = "everything", positive = "1")
+```
+
+### 2.3.2. Pruning the Tree
+
+We can set the tuning parameter of the CART by pruning the tree and conducting the 10 times cross-validation. Below we can see the complexity parameter that produces the highest accuracy (Complexity parameter = 0.0036)
+
+```{r, include=FALSE}
+CARTModel2 <- train(
+  Y ~ destination + passanger + weather + temperature +time + coupon + 
+    expiration + gender + age + maritalStatus + has_children + education + 
+    income + direction_same + Bar + CoffeeHouse + CarryAway + RestaurantLessThan20 + 
+    Restaurant20To50 + toCoupon_GEQ25min, 
+    data = trainingset, method = "rpart",
+  trControl = trainControl("cv", number = 10),
+  tuneLength = 10
+)
+```
+
+```{r, echo=FALSE, fig.height=3, fig.width=7}
+plot(CARTModel2)
+```
+
+The new confusion matrix is shown below. In this case, the $F_1$ score improved. However, the objective of having $F_1 > 0.75$, was still not achieved.
+
+```{r, include=FALSE}
+#Decision rules in the model
+CARTModel2$finalModel
+
+#Make predictions on the test data
+predicted.cases <- CARTModel2 %>% predict(testset)
+```
+
+```{r, echo=FALSE}
+#Show confusion matrix statistics to check the sensitivity, specificity and balanced accuracy
+confusionMatrix(predicted.cases, testset$Y, mode = "everything", positive = "1")
+```
+
+### 2.3.3. Final Hold-Out Test for CART
+
+Results in the final-hold out test using the Validation Set showed that CART almost achieved the objective of this project with a difference of 0.006 or 0.6%. 
+
+```{r, include=FALSE}
+#Testing for the final model: validation
+#Make sure validation has the same data structure from validation
+#Set interger values into char
+validation <- validation %>%
+  mutate(temperature = as.factor(temperature)) %>%
+  mutate(toCoupon_GEQ25min =  as.factor(toCoupon_GEQ25min)) %>%
+  mutate(direction_same = as.factor(direction_same)) %>%
+  mutate(Y = as.factor(Y))
+
+predicted.cases <- CARTModel2 %>% predict(validation)
+```
+
+```{r, echo=FALSE}
+#Show confusion matrix statistics to check the sensitivity, specificity and balanced accuracy
+confusionMatrix(predicted.cases, validation$Y, mode = "everything", positive = "1")
+```
+
+```{r, include=FALSE}
+#Create table showing results of F1, Precision and Recall
+Results <- data.frame(Variable = "CART", 
+                      F1 = F1_Score(predicted.cases, validation$Y, positive = "1"),
+                      Precision = Recall(predicted.cases, validation$Y, positive = "1"),
+                      Recall = Precision(predicted.cases, validation$Y, positive = "1"))
+```
+
+
+## 2.4. Random Forest
+
+### 2.4.1. Vanilla Random Forest
+
+This time I utilized the random forest algorithm. I ran the algorithm using the 'randomForest' function to predict coupon acceptance against all valid features in the training set. Next, the model was used to predict the test set. The result of the prediction showed that the random forest surpassed the required $F_1$ score. 
+
+```{r, include=FALSE}
+RFModel <-randomForest(Y ~ destination + passanger + weather + temperature +
+                    time + coupon + expiration + gender + age + maritalStatus +
+                    has_children + education + income + direction_same +
+                    Bar + CoffeeHouse + CarryAway + RestaurantLessThan20 +
+                    Restaurant20To50 + toCoupon_GEQ25min, data = trainingset, proximity = TRUE)
+
+predicted.cases <- predict(RFModel, testset)
+
+```
+
+```{r, echo=FALSE}
+confusionMatrix(predicted.cases, testset$Y, mode = "everything", positive = "1")
+```
+
+### 2.4.2. Tuning the Hyperparameters
+
+To tune the parameter we need to find the value of mtry the provides the least out of bag error (OOB). The out-of-bag (OOB) error is the average error for each calculated using predictions from the trees that do not contain in their respective bootstrap sample [8]. We can set the initial mtry using this function:
+
+```{r}
+floor(sqrt(ncol(trainingset) - 1))
+```
+
+The'tuneRF' function was used to find the best mtry value. The results showed that an mtry value of 4 was the best tuning parameter.
+
+```{r, include=FALSE}
+#Tune the parameter by finding mtry value with minimum out of bag(OOB) error
+mtry <- tuneRF(trainingset[-5], trainingset$Y, ntreeTry = 500,
+               stepFactor = 1.1, improve = 0.01, trace = TRUE, plot = TRUE)
+```
+
+```{r, echo=FALSE}
+best.m <- mtry[mtry[, 2] == min(mtry[, 2]), 1]
+```
+
+The important features in the prediction model is shown in the figure below. The figure shows how much a decrease in Gini value would have a model if a feature is excluded. It shows that coupon, income, and age are the top three important features in the Random Forest Model.
+
+```{r, echo=FALSE}
+#Evaluate variable importance
+varImpPlot(RFModel)
+```
+
+I ran the again the 'randomForest' function with the new tuning parameter. The result indicates that the new tuning parameter increased the $F_1$ score on test set. 
+
+```{r, include=FALSE}
+RFModel <-randomForest(Y ~ destination + passanger + weather + temperature +
+                         time + coupon + expiration + gender + age + maritalStatus +
+                         has_children + education + income + direction_same +
+                         Bar + CoffeeHouse + CarryAway + RestaurantLessThan20 +
+                         Restaurant20To50 + toCoupon_GEQ25min, data = trainingset, 
+                       proximity = TRUE)
+
+predicted.cases <- predict(RFModel, testset)
+```
+
+```{r, echo=FALSE}
+confusionMatrix(predicted.cases, testset$Y, mode = "everything", positive = "1")
+```
+
+### 2.4.3 Final Hold-Out Test for Random Forest
+
+Results in the final-hold out test using the Validation Set showed that Random Forest achieved the objective of this project, with an $F_1 = .7804$
+
+```{r, include=FALSE}
+#Create prediction values on validation set
+predicted.cases <- predict(RFModel, validation)
+
+#Compute model accuracy rate on validation set
+mean(predicted.cases  == validation$Y)
+
+```
+
+```{r, echo=FALSE}
+#Show confusion matrix statistics to check the sensitivity, specificity and balanced accuracy
+confusionMatrix(predicted.cases, validation$Y, mode = "everything", positive = "1")
+```
+
+```{r, include=FALSE}
+#Create table showing results of F1, Precision and Recall
+Results2 <- data.frame(Variable = "Random Forest", 
+                      F1 = F1_Score(predicted.cases, validation$Y, positive = "1"),
+                      Precision = Recall(predicted.cases, validation$Y, positive = "1"),
+                      Recall = Precision(predicted.cases, validation$Y, positive = "1"))
+Results <- rbind(Results, Results2)
+rm(Results2)
+```
+
+
+## 2.5. XGBoost
+
+### 2.5.1. Vanilla XGBoost
+
+Lastly, I utilized the XGBoost algorithm which is considered as the more powerful algorithm compared to CART and Random Forest. Before running the XGBoost algorithm, several mutations were done in the dataset such as the creating dummy variables for all features using 'sparse.model.matrix' function and setting parameters. After completing all conditions in the dataset, I ran the XGboost algorithm using the 'xgb.train' function. Next, the model was used to predict the test set. The result of the prediction showed that the XGBoost surpassed the required $F_1$ score. 
+
+```{r, include=FALSE}
+combinedset <- rbind(trainingset, testset)
+
+#Transform all categorical data into dummy variables of trainset
+sparse_matrix_train <- sparse.model.matrix(Y ~ destination + passanger + weather + 
+                                       temperature + time + coupon + expiration + 
+                                       gender + age + maritalStatus + has_children + 
+                                       education + income + direction_same + Bar + 
+                                       CoffeeHouse + CarryAway + RestaurantLessThan20 +
+                                       Restaurant20To50 + toCoupon_GEQ25min, 
+                                     data = trainingset)[,-1]
+
+#Transform all categorical data into dummy variables of testset
+sparse_matrix_test <- sparse.model.matrix(Y ~ destination + passanger + weather + 
+                                       temperature + time + coupon + expiration + 
+                                       gender + age + maritalStatus + has_children + 
+                                       education + income + direction_same + Bar + 
+                                       CoffeeHouse + CarryAway + RestaurantLessThan20 +
+                                       Restaurant20To50 + toCoupon_GEQ25min, 
+                                     data = testset)[,-1]
+
+#Create a numeric vector for the output (Y)
+y_train <- as.integer(trainingset$Y) - 1
+y_test <- as.integer(testset$Y) - 1
+
+#Create DMatrix data structure for both training and test sets
+xgb_train <- xgb.DMatrix(data = as.matrix(sparse_matrix_train), label = y_train)
+xgb_test <- xgb.DMatrix(data = as.matrix(sparse_matrix_test), label = y_test)
+
+#Build list of parameters
+xgb_params <- list( booster = "gbtree", eta = 0.01, max_depth = 8,
+                    gamma = 4, subsample = 0.75, colsample_bytree = 1,
+                    objective = "multi:softprob", eval_metric = "mlogloss",
+                    num_class = length(levels(combinedset$Y)))
+
+#Build XGBoost Model
+xgb_model <- xgb.train(params = xgb_params, data = xgb_train, nrounds = 5000,
+                       verbose = 1)
+
+#Make predictions on testset
+xgb_preds <- predict(xgb_model, as.matrix(sparse_matrix_test), reshape = TRUE)
+xgb_preds <- as.data.frame(xgb_preds)
+colnames(xgb_preds) <- levels(combinedset$Y)
+
+#The result in xgb_preds only show the probability of each terminal nodes (Y = 1 or 0)
+#We need to convert these probability into actual predictions in a new column
+xgb_preds$PredictedClass <- apply(xgb_preds, 1, function(y) colnames(xgb_preds)[which.max(y)])
+xgb_preds$ActualClass <- levels(combinedset$Y)[y_test + 1]
+```
+
+```{r, echo=FALSE}
+#Show confusion matrix statistics to check the sensitivity, specificity and balanced accuracy
+confusionMatrix(factor(xgb_preds$ActualClass), factor(xgb_preds$PredictedClass), 
+                mode = "everything", positive = "1")
+```
+
+### 2.5.2 Final Hold-Out Test for XGBoost
+
+The XGBoost algorithm has exceeded both CART and Random Forest hold-out test on Validation Set. XGBoost showed a final $F_1= .7927$
+
+```{r, include=FALSE}
+#Make prediction for the final validation set
+#Transform all categorical data into dummy variables of validation set
+sparse_matrix_validation <- sparse.model.matrix(Y ~ destination + passanger + weather + 
+                                             temperature + time + coupon + expiration + 
+                                             gender + age + maritalStatus + has_children + 
+                                             education + income + direction_same + Bar + 
+                                             CoffeeHouse + CarryAway + RestaurantLessThan20 +
+                                             Restaurant20To50 + toCoupon_GEQ25min, 
+                                           data = validation)[,-1]
+
+#Create a numeric vector for the output (Y)
+y_validation <- as.integer(validation$Y) - 1
+
+#Create DMatrix data structure for validation
+xgb_validation <- xgb.DMatrix(data = as.matrix(sparse_matrix_validation), label = y_validation)
+
+#Make predictions on validation set
+xgb_preds <- predict(xgb_model, as.matrix(sparse_matrix_validation), reshape = TRUE)
+xgb_preds <- as.data.frame(xgb_preds)
+colnames(xgb_preds) <- levels(combinedset$Y)
+
+#The result in xgb_preds only show the probability of each terminal nodes (Y = 1 or 0)
+#We need to convert these probability into actual predictions in a new column
+xgb_preds$PredictedClass <- apply(xgb_preds, 1, function(y) colnames(xgb_preds)[which.max(y)])
+xgb_preds$ActualClass <- levels(combinedset$Y)[y_validation + 1]
+```
+
+```{r, echo=FALSE}
+#Show confusion matrix statistics to check the sensitivity, specificity and balanced accuracy
+confusionMatrix(factor(xgb_preds$ActualClass), factor(xgb_preds$PredictedClass), 
+                mode = "everything", positive = "1")
+```
+
+```{r, include=FALSE}
+Results2 <- data.frame(Variable = "XGBoost", 
+                       F1 = F1_Score(factor(xgb_preds$ActualClass), factor(xgb_preds$PredictedClass), positive = "1"),
+                       Precision = Recall(factor(xgb_preds$ActualClass), factor(xgb_preds$PredictedClass), positive = "1"),
+                       Recall = Precision(factor(xgb_preds$ActualClass), factor(xgb_preds$PredictedClass), positive = "1"))
+Results <- rbind(Results, Results2)
+rm(Results2)
+```
+
+The important features in the predction model is shown below. The coupon, coffee house, destination, weather and gender were the top five important features in the XGBoost model.
+
+```{r, echo=FALSE, fig.height=5, fig.width=7}
+#Plot XGBoost importance matrix
+importance_matrix <- xgb.importance(names(xgb_validation), model = xgb_model)
+xgb.plot.importance(importance_matrix)
+```
+
+# 3. Results
+
+Results from the final-hold out tests indicate that XGboost provided the highest $F_1$ score, followed by Random Forest and CART. XGBoost has the highest number of correct predictions for both positive and negative responses. However, Random Forest has the best recall among the algorithms. The random forest has less false-negative prevalence (customers want the coupon but are not given). We prefer better recall in this case because we would maximize our ability to identify potential customers rather than non-potential ones. Also, if in issue, the cost of losing a potential customer is higher than the cost of coupons.
+
+Meanwhile, XGBoost has the best precision among the algorithms, which means it has less false-positive prevalence (customers do not want coupons but are given). Better precision means better cost efficiency (less waste on resources). When we have limited resources such as coupons, better precision is preferred.
+
+```{r, echo=FALSE}
+knitr::kable(Results, digits = round(4))
+```
+
+# 4. Conclusion
+
+This report aimed to predict in-vehicle coupon acceptance using three classification algorithms namely, CART, Random Forest, and XGBoost. The results showed that XGBoost provides the highest $F_1$ score. Meanwhile, since the $F_1$ score is the harmonic mean of precision and recall, it is assumed that both precision and recall are equally valued. However, in reality, some companies prefer precision (cost efficiency) than recall (wider reach) or vice-versa. 
+
+While XGBoost is considered the best algorithm in the project, its downside is its interpretability. Due to its size, I cannot show the multi-trees in the R-Markdown that tell us the train-of-decision in its prediction. XGBoost’s interpretability might do well using neatly prepared features.
+
+
+Another limitation comes from the attributes of the dataset. I find that some features can still be tweaked for improved performance. For example, occupations can be categorized into different types, such as blue collar jobs, white collar jobs, etc. We also found empty values in some features. Fortunately, the algorithms used in this project are robust to missing values. Future works should consider these limitations.
+
+Overall, the final result of this project is successful. All algorithms have showed promise in their prediction. Consumer prediction is considered to be one of the important task in machine learning. With this project, company's will be able to predict in-vehicle coupon acceptance at more than 75% accuracy ($F_1$) score.
+
+# References
+
+[1] <https://www.salecycle.com/blog/strategies/>
+
+[2] <https://archive.ics.uci.edu/ml/datasets/in-vehicle+coupon+recommendation>
+
+[3] <https://www.minitab.com/en-us/predictive-analytics/cart/> 
+
+[4] <https://www.ibm.com/cloud/learn/random-forest> 
+
+[5] <https://machinelearningmastery.com/gentle-introduction-xgboost-applied-machine-learning/>
+
+[6] <https://www.v7labs.com/blog/train-validation-test-set>
+
+[7] <https://rafalab.github.io/dsbook/introduction-to-machine-learning.html#evaluation-metrics>
+
+[8] <http://scikit-learn.org/stable/auto_examples/ensemble/plot_ensemble_oob.html>
