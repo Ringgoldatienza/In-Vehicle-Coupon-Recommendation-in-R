@@ -33,8 +33,7 @@ if(!require(DiagrammeR)) install.packages("DiagrammeR", repos = "http://cran.us.
 #Source: Wang, Tong, Cynthia Rudin, Finale Doshi-Velez, Yimin Liu, Erica Klampfl, 
 #and Perry MacNeille. 'A bayesian framework for learning rule sets for interpretable classification.' 
 #The Journal of Machine Learning Research 18, no. 1 (2017): 2357-2393.
-dataset <- read.csv("C://Users//ADMIN//Documents//GitHub//In-Vehicle Coupon Recommendation//Data.csv")
-
+dataset <- read.csv("https://raw.githubusercontent.com/Ringgoldatienza/In-vehicle-Coupon-Recommendation/main/Data.csv")
 
 #Partition data into training, validation and test sets.
 #I use the 70-15-15 partition as it is one of the most common practice for partition.
